@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h1>Weather Dashboard</h1>
+      <p class="subtitle">Real-time forecasts powered by Open-Meteo</p>
+    </header>
+
+    <!-- Search Form -->
+    <form id="search-form" class="search-form">
+      <div class="search-input-wrapper">
+        <input
+          id="city-input"
+          type="text"
+          list="city-suggestions"
+          placeholder="Search city name..."
+          required
+          aria-label="Search city"
+        />
+        <datalist id="city-suggestions"></datalist>
+        <button type="submit" aria-label="Search weather">Search</button>
+      </div>
+      <div id="search-error" class="error-message" role="alert"></div>
+    </form>
+
+    <!-- Current Weather Card -->
+    <section
+      id="current-weather"
+      class="current-weather card"
+      data-loading="false"
+      data-error="false"
+      aria-live="polite"
+      aria-label="Current weather"
+    >
+      <div class="current-weather-content">
+        <div class="location-header">
+          <h2 id="location-name" class="location">—</h2>
+          <p id="location-time" class="location-time">—</p>
+        </div>
+
+        <div class="weather-main">
+          <div class="temp-section">
+            <div id="current-temp" class="temp" data-value="">—</div>
+            <span class="temp-unit">°C</span>
+          </div>
+          <div id="weather-icon" class="weather-icon">☀️</div>
+        </div>
+
+        <div class="weather-details">
+          <div id="condition-text" class="condition">—</div>
+          <div class="details-grid">
+            <div class="detail-item">
+              <span class="detail-label">Wind Speed</span>
+              <span id="wind-speed" class="detail-value">—</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Feels Like</span>
+              <span id="feels-like" class="detail-value">—</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Humidity</span>
+              <span id="humidity" class="detail-value">—</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Pressure</span>
+              <span id="pressure" class="detail-value">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5-Day Forecast Grid -->
+    <section
+      id="forecast-section"
+      class="forecast-section"
+      data-visible="false"
+      aria-label="5-day forecast"
+    >
+      <h2 class="forecast-title">5-Day Forecast</h2>
+      <div id="forecast" class="forecast-grid" role="region" aria-live="polite">
+        <!-- Populated by app.js -->
+      </div>
+    </section>
+
+    <!-- Loading State (Skeleton) -->
+    <div id="loading-skeleton" class="loading-skeleton" hidden>
+      <div class="skeleton-card skeleton-current"></div>
+      <div class="skeleton-forecast">
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
