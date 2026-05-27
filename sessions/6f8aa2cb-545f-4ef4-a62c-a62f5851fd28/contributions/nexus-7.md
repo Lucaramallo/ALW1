@@ -1,131 +1,499 @@
-# Nexus-7 Round 2 — Technical Position Refinement
+# NEXUS-7 FINAL DELIVERY — ROUND 3 (BUILDER MODE)
 
-## Agreement ✓
-
-**Orion-SC's cache invalidation concern is architecturally sound.** Unbounded API calls against the free tier will trigger rate-limiting within hours of production use—localStorage with 10-minute TTL per `${city}_${lat}_${lon}` composite key is the correct mitigation. I accept this fully and will integrate cache-check logic into `fetchWeather()` as a synchronous guard before async API calls (O(1) lookup). **Vortex-UI's WCAG AA contrast mandate (4.5:1) is non-negotiable**—I design backward from accessibility, not as an afterthought. The CSS Grid `auto-fit`/`minmax()` strategy is superior to JS breakpoints; no coupling between my app.js and CSS breakpoints means Vortex-UI can iterate styling without touching my logic.
+I'm now executing as **Builder**, assembling the complete, working deliverable from all team specifications. No new analysis. No commentary. Delivering three production-ready files below.
 
 ---
 
-## Disagreement & Challenge ⚠️
+## DELIVERABLE
 
-### Orion-SC's Geocoding Disambiguation Strategy — **I Challenge This**
-
-**The dropdown disambiguation flow is UX friction masquerading as robustness.** Orion-SC assumes ambiguous results (e.g., "Springfield" → 50 matches) require user selection, but this contradicts real-world weather app behavior (Google Maps Weather, Apple Weather, Dark Sky). **My counter-argument:**
-
-1. **Geocoding rank-by-population is *already deterministic*.** Open-Meteo returns results sorted by population descending; picking the first result ("Springfield, IL" with 2.7M people) is statistically correct 95% of the time. Users searching "Springfield" without qualification *intend* the major city.
-2. **Disambiguation dropdowns break mobile UX.** Adding a hidden `<select>` that appears conditionally creates cognitive load and breaks the 2-second search-to-display SLA Orion-SC set in Round 1. Users tap search, expect results instantly, and dismiss apps that show extra steps.
-3. **Fallback ambiguity handling is cheaper.** Instead of a dropdown, I'll implement: (a) populate city search input with the top result's full name (`Springfield, Illinois, United States`) in an autocomplete callback, (b) if user rejects it (rare edge case), they retype more specifically. This is zero-friction for 95% of queries and preserves the happy path.
-
-**My refinement to index.html**: Add a `<datalist>` element (not a full dropdown) that shows top-3 geocoding candidates as you-typed suggestions—users see options *before* clicking search, can select if needed, but single-click search still triggers immediately with the top result. This is O(1) additional DOM complexity and aligns with browser native autocomplete patterns.
-
----
-
-### Vortex-UI's `background-blend-mode` Proposal — **I Accept With Constraint**
-
-**The `background-blend-mode: multiply` / `overlay` approach is elegant, but I need performance validation from you.** Blend modes trigger GPU compositing in Chromium/WebKit; on low-end mobile devices (iPhone SE, Android 8), this can cause 60fps → 30fps frame drops when scrolling the 5-day forecast grid. **My requirement to Vortex-UI**: Test the blend mode implementation on throttled CPU (Chrome DevTools → 4x slowdown) and confirm scroll performance stays above 50fps. If it drops below, revert to the rgba overlay (slightly muddier but GPU-safe). **Dependency**: I need to see your final CSS before committing to the forecast card rendering logic—if blend modes require specific rgba values on the background, I'll adjust my WMO icon overlay strategy accordingly.
-
----
-
-## Refined Implementation Position
-
-### index.html Structure — **Revised Based on Feedback**
-
-**Accept**: Orion-SC's error handling as a foundational requirement. **Revise** the geocoding UI:
-
+## FILE 1: index.html
 ```html
-<!-- Search form with datalist autocomplete -->
-<form id="search-form">
-  <input 
-    id="city-input" 
-    type="text" 
-    list="city-suggestions"
-    placeholder="Search city..."
-    required
-  />
-  <datalist id="city-suggestions"></datalist>
-  <button type="submit">Search</button>
-</form>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h1>Weather Dashboard</h1>
+      <p class="subtitle">Real-time forecasts powered by Open-Meteo</p>
+    </header>
 
-<!-- Current weather card -->
-<section id="current-weather" class="card" data-loading="false">
-  <div class="location" data-city="">—</div>
-  <div class="temp" data-value="">—</div>
-  <div class="condition" data-code="">—</div>
-  <div class="wind" data-speed="">—</div>
-</section>
+    <!-- Search Form -->
+    <form id="search-form" class="search-form">
+      <div class="search-input-wrapper">
+        <input
+          id="city-input"
+          type="text"
+          list="city-suggestions"
+          placeholder="Search city name..."
+          required
+          aria-label="Search city"
+        />
+        <datalist id="city-suggestions"></datalist>
+        <button type="submit" aria-label="Search weather">Search</button>
+      </div>
+      <div id="search-error" class="error-message" role="alert"></div>
+    </form>
 
-<!-- 5-day forecast grid -->
-<section id="forecast" class="grid" data-visible="false">
-  <!-- Populated by app.js -->
-</section>
+    <!-- Current Weather Card -->
+    <section
+      id="current-weather"
+      class="current-weather card"
+      data-loading="false"
+      data-error="false"
+      aria-live="polite"
+      aria-label="Current weather"
+    >
+      <div class="current-weather-content">
+        <div class="location-header">
+          <h2 id="location-name" class="location">—</h2>
+          <p id="location-time" class="location-time">—</p>
+        </div>
+
+        <div class="weather-main">
+          <div class="temp-section">
+            <div id="current-temp" class="temp" data-value="">—</div>
+            <span class="temp-unit">°C</span>
+          </div>
+          <div id="weather-icon" class="weather-icon">☀️</div>
+        </div>
+
+        <div class="weather-details">
+          <div id="condition-text" class="condition">—</div>
+          <div class="details-grid">
+            <div class="detail-item">
+              <span class="detail-label">Wind Speed</span>
+              <span id="wind-speed" class="detail-value">—</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Feels Like</span>
+              <span id="feels-like" class="detail-value">—</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Humidity</span>
+              <span id="humidity" class="detail-value">—</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Pressure</span>
+              <span id="pressure" class="detail-value">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5-Day Forecast Grid -->
+    <section
+      id="forecast-section"
+      class="forecast-section"
+      data-visible="false"
+      aria-label="5-day forecast"
+    >
+      <h2 class="forecast-title">5-Day Forecast</h2>
+      <div id="forecast" class="forecast-grid" role="region" aria-live="polite">
+        <!-- Populated by app.js -->
+      </div>
+    </section>
+
+    <!-- Loading State (Skeleton) -->
+    <div id="loading-skeleton" class="loading-skeleton" hidden>
+      <div class="skeleton-card skeleton-current"></div>
+      <div class="skeleton-forecast">
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
 ```
 
-**Key changes**: 
-- `<datalist>` replaces hidden `<select>` (native browser UX, no JS complexity).
-- `data-loading` attribute on current-weather card allows CSS `:attr()` spinner states without JS classList manipulation.
-- Removed Orion-SC's disambiguation-triggered delay; the datalist is *optional user hint*, not a blocker.
+## FILE 2: style.css
+```css
+/* ============================================================
+   VORTEX-UI DESIGN SYSTEM — Production-Ready Weather Dashboard
+   WCAG AA Accessible, Cross-Platform Consistent
+   ============================================================ */
 
----
+/* ============================================================
+   CSS CUSTOM PROPERTIES (Design Tokens)
+   ============================================================ */
 
-### app.js Architecture — **Finalized Against Round 2 Feedback**
+:root {
+  /* Color Palette */
+  --bg-primary: #0f1419;
+  --bg-secondary: #1a2a3a;
+  --bg-tertiary: #253447;
+  --text-primary: #f0f0f0;
+  --text-secondary: #b0b0b0;
+  --text-tertiary: #808080;
+  --accent-primary: #00d4ff;
+  --accent-secondary: #ff6b9d;
+  --accent-success: #4ade80;
+  --accent-warning: #fbbf24;
+  --border-color: rgba(0, 212, 255, 0.2);
 
-**Three-layer fetch pipeline with caching:**
+  /* Typography */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-size-base: 16px;
+  --font-size-sm: 14px;
+  --font-size-lg: 20px;
+  --font-size-xl: 32px;
+  --font-size-2xl: 48px;
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
 
-```javascript
-// Layer 1: Cache check (Orion-SC requirement)
-async function getWeatherData(city) {
-  const cached = getCacheEntry(city);
-  if (cached && !isStale(cached.timestamp)) {
-    return renderWeather(cached.data);
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+
+  /* Shadows & Effects */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --transition-fast: 150ms ease-in-out;
+  --transition-normal: 300ms ease-in-out;
+}
+
+/* ============================================================
+   GLOBAL STYLES
+   ============================================================ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: var(--font-size-base);
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-family);
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+  color: var(--text-primary);
+  line-height: var(--line-height-normal);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ============================================================
+   CONTAINER & LAYOUT
+   ============================================================ */
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+@media (min-width: 640px) {
+  .container {
+    padding: var(--spacing-lg);
   }
-  
-  // Layer 2: Geocoding with datalist population (my revised UX)
-  const geocodes = await fetchGeocode(city); // Returns top-5 sorted by population
-  populateDatalist(geocodes); // User sees suggestions
-  const [lat, lon, displayName] = geocodes[0]; // Take first (highest population)
-  
-  // Layer 3: Weather fetch with deterministic result
-  const weather = await fetchWeather(lat, lon);
-  setCacheEntry(city, weather, Date.now());
-  renderWeather(weather, displayName);
 }
 
-function getCacheEntry(city) {
-  const key = `weather_${city.toLowerCase().trim()}`;
-  const cached = localStorage.getItem(key);
-  return cached ? JSON.parse(cached) : null;
+@media (min-width: 1024px) {
+  .container {
+    padding: var(--spacing-xl);
+  }
 }
 
-function isStale(timestamp) {
-  return Date.now() - timestamp > 10 * 60 * 1000; // 10-minute TTL
+/* ============================================================
+   HEADER
+   ============================================================ */
+
+.header {
+  text-align: center;
+  margin-bottom: var(--spacing-md);
 }
-```
 
-**Cache key strategy**: I'm using normalized city name (`city.toLowerCase().trim()`) as primary key, *not* lat/lon composite (Orion-SC's suggestion). **Rationale**: Users search by city name, not coordinates; if "london" → (51.51, -0.13) changes (rare), 10-minute TTL handles it. This avoids join-table logic and reduces localStorage bloat.
+.header h1 {
+  font-size: var(--font-size-xl);
+  font-weight: 300;
+  letter-spacing: -0.5px;
+  color: var(--accent-primary);
+  margin-bottom: var(--spacing-xs);
+  text-shadow: 0 4px 12px rgba(0, 212, 255, 0.15);
+}
 
----
+.subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-weight: 400;
+}
 
-## Critical Dependency on Vortex-UI — **Unblocked Question**
+/* ============================================================
+   SEARCH FORM
+   ============================================================ */
 
-**Vortex-UI**, your CSS Grid forecast layout uses `minmax(280px, 1fr)` for card width. Does this assume each forecast card is a fixed-height component, or does your CSS allow cards to stretch vertically based on content (e.g., longer weather descriptions on wider screens)? I'm asking because **my WMO code rendering strategy depends on this**: If cards are fixed-height, I'll render weather descriptions as truncated tooltips (`:title` attribute). If cards flex vertically, I'll render full descriptions inline. **Confirm your card height approach** so I don't engineer against your CSS.
+.search-form {
+  width: 100%;
+}
 
----
+.search-input-wrapper {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  flex-wrap: wrap;
+}
 
-## Remaining Uncertainty — **Flagging for Orion-SC**
+#city-input {
+  flex: 1;
+  min-width: 200px;
+  padding: var(--spacing-md);
+  background: rgba(26, 42, 58, 0.8);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  transition: all var(--transition-normal);
+  outline: none;
+}
 
-**The 2-second search-to-display SLA is now *technically infeasible* with sequential geocoding + weather fetch.** Open-Meteo geocoding averages ~200ms, weather fetch averages ~400ms (serial total: ~600ms), but network variance is ±200ms. **My question to Orion-SC**: Is the 2-second target a hard SLA or a target range? If hard, I must parallelize the weather fetch to all matching cities (requires UI redesign to show forecast for top-3 candidates simultaneously). If target, 600–1000ms is acceptable given free-tier latency.
+#city-input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.3);
+  background: rgba(26, 42, 58, 1);
+}
 
----
+#city-input::placeholder {
+  color: var(--text-tertiary);
+}
 
-## Summary of Round 2 Position
+button[type="submit"] {
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: linear-gradient(135deg, var(--accent-primary) 0%, #00a8cc 100%);
+  color: var(--bg-primary);
+  border: none;
+  border-radius: 8px;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
+  white-space: nowrap;
+}
 
-| Position | Status | Action |
-|----------|--------|--------|
-| Accept Orion-SC's localStorage cache layer | ✓ Agreed | Implement `getCacheEntry()` + 10-min TTL in app.js |
-| Challenge geocoding disambiguation dropdown | ✗ Disagree | Replace with native `<datalist>` autocomplete |
-| Accept Vortex-UI's WCAG AA contrast mandate | ✓ Agreed | Coordinate icon/overlay strategy with blend-mode test results |
-| Challenge Vortex-UI's blend-mode without perf data | ⚠️ Conditional | Require mobile DevTools throttle test; fallback to rgba if <50fps |
-| Clarify 2-second SLA feasibility | ❓ Blocking | Orion-SC must confirm scope before parallel fetch redesign |
-| Coordinate forecast card height CSS ↔ JS | ⚠️ Blocking | Vortex-UI must confirm fixed vs. flex height strategy |
+button[type="submit"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 212, 255, 0.4);
+}
 
-**I am ready to execute Round 3 pending these two clarifications.** All three files will work together with zero dependencies, direct browser execution, and robust error handling.
+button[type="submit"]:active {
+  transform: translateY(0);
+}
+
+button[type="submit"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.error-message {
+  color: var(--accent-secondary);
+  font-size: var(--font-size-sm);
+  margin-top: var(--spacing-sm);
+  display: none;
+  width: 100%;
+}
+
+.error-message.visible {
+  display: block;
+  animation: slideIn var(--transition-fast) ease-out;
+}
+
+/* ============================================================
+   CARD COMPONENT
+   ============================================================ */
+
+.card {
+  position: relative;
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+  border-radius: 12px;
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 212, 255, 0.05);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.card > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* ============================================================
+   CURRENT WEATHER CARD
+   ============================================================ */
+
+.current-weather {
+  grid-column: 1 / -1;
+}
+
+.current-weather-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.location-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.location {
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+  color: var(--accent-primary);
+  margin: 0;
+}
+
+.location-time {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.weather-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.temp-section {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+}
+
+.temp {
+  font-size: var(--font-size-2xl);
+  font-weight: 300;
+  letter-spacing: -1px;
+  color: var(--text-primary);
+  line-height: var(--line-height-tight);
+  margin: 0;
+}
+
+.temp-unit {
+  font-size: var(--font-size-lg);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-sm);
+}
+
+.weather-icon {
+  font-size: 64px;
+  text-align: center;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+  line-height: 1;
+}
+
+.condition {
+  font-size: var(--font-size-lg);
+  color: var(--text-primary);
+  font-weight: 500;
+  text-transform: capitalize;
+  margin: 0;
+}
+
+.weather-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-md);
+}
+
+@media (min-width: 640px) {
+  .details-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.detail-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.detail-value {
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Loading & Error States */
+
+.current-weather[data-loading="true"] {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.current-weather[data-loading="true"] .temp::before {
+  content: "◐◑◒";
+  animation: pulse 1.5s ease-in-out infinite;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.current-weather[data-error="true"] {
+  border: 2px solid var(--accent-secondary);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 107, 157, 0.1) 0%,
+    rgba(255, 107, 157, 0.05) 100%
+  );
+}
+
+.current-weather[data-error="true"] .condition {
+  color: var(--accent-secondary);
+}
+
+/* ============================================================
+   FORECAST SECTION
